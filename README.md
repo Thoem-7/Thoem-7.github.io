@@ -1,11 +1,20 @@
 # Thoem-7.github.io
-Sales Dasboard Executive Summary
 <!DOCTYPE html>
 <html lang="th">
 <head>
     <meta charset="UTF-8">
+    <!-- ทำให้เป็นหน้าจอมือถือ และล็อกการซูม (App-like feel) -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Sales Dashboard Executive Summary : OB2 & HOR</title>
+    
+    <!-- PWA / Apple Mobile Web App Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Exec Dashboard">
+    
+    <!-- ไอคอนแอป (ถ้ามีรูปโลโก้บริษัท สามารถนำมาใส่แทนที่ลิงก์นี้ได้ครับ) -->
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/8636/8636060.png">
+    
+    <title>Executive Sales Dashboard</title>
     
     <!-- Fix: Define process for libraries that expect node env -->
     <script>
@@ -38,24 +47,26 @@ Sales Dasboard Executive Summary
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
         select, button, input { touch-action: manipulation; }
         
-        /* Glassmorphism utility */
         .glass-card {
             background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.2);
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
         }
-        
+
         /* Loading Spinner */
         .loader {
             border: 4px solid #f3f3f3;
             border-top: 4px solid #3b82f6;
             border-radius: 50%;
-            width: 40px;
-            height: 40px;
+            width: 50px;
+            height: 50px;
             animation: spin 1s linear infinite;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        /* ป้องกันการเด้ง (Overscroll) บน iOS */
+        html, body { overscroll-behavior-y: none; }
     </style>
 </head>
 <body class="text-slate-800">
@@ -63,23 +74,22 @@ Sales Dasboard Executive Summary
     <div id="root"></div>
 
     <script type="text/babel">
+        // ==========================================
+        // 1. ตั้งค่า URL ของไฟล์ข้อมูลสำหรับดึงจาก GitHub
+        // ==========================================
+        const API_URLS = [
+            'Executive Summary_OB2&HOR_26Y04_wk_02-2026.csv',
+            'Sales_HOR_V03.csv',
+            'Sales_OB2_V03.csv',
+            'Target_HOR_V03.csv',
+            'Target_OB2_V03.csv'
+        ];
+
         const { useState, useMemo, useEffect } = React;
         const Recharts = window.Recharts;
-        if (!Recharts) {
-            document.getElementById('root').innerHTML = `
-                <div class="flex items-center justify-center min-h-screen">
-                    <div class="p-6 bg-red-50 text-red-700 rounded-lg border border-red-200 shadow-md">
-                        <h3 class="font-bold text-lg mb-2">Error Loading Dashboard</h3>
-                        <p>ไม่สามารถโหลด Recharts Library ได้ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต</p>
-                    </div>
-                </div>
-            `;
-            throw new Error("Recharts not loaded");
-        }
-
         const { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart } = Recharts;
 
-        // --- Inline Icons (SVG) ---
+        // --- Inline Icons ---
         const Icon = ({ path, className, size = 24 }) => (
             <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
                 {path}
@@ -134,7 +144,6 @@ Sales Dasboard Executive Summary
         const MONTH_NAMES_ENG = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
         const MONTH_NAMES_TH = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
 
-        // Tooltip Customization
         const CustomTooltip = ({ active, payload, label }) => {
             if (active && payload && payload.length) {
                 const ach = payload[0].payload.Ach;
@@ -161,11 +170,11 @@ Sales Dasboard Executive Summary
 
         // --- Main Component ---
         const SalesDashboard = () => {
-            // States
             const [data, setData] = useState([]);
             const [outletData, setOutletData] = useState({});
             const [loadedFiles, setLoadedFiles] = useState([]);
-            const [isLoading, setIsLoading] = useState(true); // Loading State for API
+            const [isLoading, setIsLoading] = useState(true); 
+            const [loadingProgress, setLoadingProgress] = useState(0);
             const [apiError, setApiError] = useState(false);
             
             // Filters
@@ -175,7 +184,6 @@ Sales Dasboard Executive Summary
             const [selectedTeam, setSelectedTeam] = useState('All');
             const [selectedArea, setSelectedArea] = useState('All'); 
             const [selectedSupCode, setSelectedSupCode] = useState('All');
-            
             const [selectedGroupSales, setSelectedGroupSales] = useState('All');
             const [selectedPrdType, setSelectedPrdType] = useState('All');
             const [selectedProductName, setSelectedProductName] = useState('All');
@@ -184,16 +192,12 @@ Sales Dasboard Executive Summary
             const [currentPage, setCurrentPage] = useState(1);
             const itemsPerPage = 15;
 
-            // --- Core Parsing Function ---
+            // --- ฟังก์ชันนำข้อมูลมาประมวลผล ---
             const processFilesData = (fileResults) => {
                 let consolidated = {};
-                let newOutlet = {}; // Reset state for clean load
-                let fileNames = [];
+                let newOutlet = {}; 
 
                 fileResults.forEach(({ name, text }) => {
-                    fileNames.push(name);
-
-                    // 1. Detect Executive Summary (Outlet Data)
                     if (text.includes('Outlet Target') || text.includes('Outlet (Active)')) {
                         const lines = text.split('\n').map(l => l.trim());
                         let mode = null;
@@ -214,7 +218,6 @@ Sales Dasboard Executive Summary
                             }
                         });
                     } 
-                    // 2. Detect Detailed Sales / Target Data
                     else if (text.includes('SM_CODE_NEW')) {
                         const lines = text.split('\n').map(l => l.trim()).filter(l => l);
                         const headers = splitCSV(lines[0]).map(c => c.trim().replace(/["']/g, ''));
@@ -229,7 +232,6 @@ Sales Dasboard Executive Summary
                         const idxPrd = headers.indexOf('PRD Type');
                         const idxName = headers.indexOf('PRODUCT_NAME_NEW');
                         
-                        // Check for Target or Sales column dynamically
                         const idxSales = headers.findIndex(h => h.toLowerCase() === 'sales');
                         const idxTarget = headers.findIndex(h => h.toLowerCase() === 'target');
                         const idxAmount = headers.findIndex(h => h.toLowerCase() === 'amount');
@@ -239,12 +241,9 @@ Sales Dasboard Executive Summary
                             const row = splitCSV(lines[i]);
                             if (row.length === headers.length) {
                                 let salesVal = 0, targetVal = 0;
-
-                                // V03 explicit structure
                                 if (idxSales >= 0) salesVal = cleanNumber(row[idxSales]);
                                 if (idxTarget >= 0) targetVal = cleanNumber(row[idxTarget]);
 
-                                // V02 old structure fallback
                                 if (idxType >= 0 && idxAmount >= 0) {
                                     let type = row[idxType].toUpperCase();
                                     if (type === 'SALES') salesVal = cleanNumber(row[idxAmount]);
@@ -280,50 +279,47 @@ Sales Dasboard Executive Summary
                 
                 setData(Object.values(consolidated));
                 setOutletData(newOutlet);
-                setLoadedFiles(fileNames);
                 setCurrentPage(1);
             };
 
-            // --- AUTO-FETCH API (Load Data without Upload) ---
+            // --- ฟังก์ชันดึงข้อมูลอัตโนมัติจาก GitHub (API Auto-Fetch) ---
             const fetchAPIData = async () => {
                 setIsLoading(true);
                 setApiError(false);
+                setLoadingProgress(0);
                 try {
-                    const apiUrls = [
-                        'Executive Summary_OB2&HOR_26Y04_wk_02-2026.csv',
-                        'Sales_HOR_V03.csv',
-                        'Sales_OB2_V03.csv',
-                        'Target_HOR_V03.csv',
-                        'Target_OB2_V03.csv'
-                    ];
-
-                    const fetchPromises = apiUrls.map(async (url) => {
+                    let fileResults = [];
+                    for(let i=0; i<API_URLS.length; i++) {
+                        // ใช้ encodeURI ป้องกัน Error กรณีชื่อไฟล์มีการเว้นวรรค
+                        const url = encodeURI(API_URLS[i]);
                         const res = await fetch(url, { cache: "no-store" });
-                        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                        if (!res.ok) throw new Error(`HTTP Error ${res.status} on file ${API_URLS[i]}`);
                         const text = await res.text();
-                        return { name: url.split('/').pop(), text: text };
-                    });
-
-                    const fileResults = await Promise.all(fetchPromises);
+                        fileResults.push({ name: API_URLS[i], text: text });
+                        setLoadingProgress(Math.round(((i + 1) / API_URLS.length) * 100));
+                    }
                     processFilesData(fileResults);
+                    setLoadedFiles(API_URLS);
                 } catch (err) {
-                    console.log("Auto-fetch API ไม่สำเร็จ (เปิด Offline หรือไม่มีไฟล์บน Server)", err);
+                    console.log("Auto-fetch API ไม่สำเร็จ:", err);
                     setApiError(true);
                 } finally {
                     setIsLoading(false);
                 }
             };
 
-            useEffect(() => {
-                fetchAPIData();
-            }, []);
+            // โหลดข้อมูลอัตโนมัติเมื่อเปิดแอป
+            useEffect(() => { fetchAPIData(); }, []);
 
-            // --- Manual File Upload Fallback ---
+            // --- ปุ่มอัปโหลดสำรอง (Manual Upload) ---
             const handleFileUpload = async (event) => {
                 const files = Array.from(event.target.files);
                 if (files.length === 0) return;
-
+                setIsLoading(true);
+                
+                let fileNames = [];
                 const readAsText = (file) => new Promise((resolve) => {
+                    fileNames.push(file.name);
                     const reader = new FileReader();
                     reader.onload = (e) => resolve({ name: file.name, text: e.target.result });
                     reader.readAsText(file);
@@ -331,6 +327,9 @@ Sales Dasboard Executive Summary
 
                 const fileResults = await Promise.all(files.map(readAsText));
                 processFilesData(fileResults);
+                setLoadedFiles(fileNames);
+                setIsLoading(false);
+                setApiError(false);
             };
 
             // Filter Options
@@ -339,13 +338,10 @@ Sales Dasboard Executive Summary
                 const quarters = [...new Set(data.map(d => d.quarter))].filter(Boolean).sort();
                 const teams = [...new Set(data.map(d => d.team))].filter(Boolean).sort();
                 const supCodes = [...new Set(data.map(d => d.sup))].filter(Boolean).sort();
-                
                 const groupSales = [...new Set(data.map(d => d.group))].filter(Boolean).sort();
                 const prdTypes = [...new Set(data.map(d => d.prdType))].filter(Boolean).sort();
                 const productNames = [...new Set(data.map(d => d.productName))].filter(Boolean).sort();
-
                 const areas = [...new Set(data.filter(d => selectedTeam === 'All' || d.team === selectedTeam).map(d => d.salesCode))].filter(Boolean).sort();
-                
                 return { years, quarters, teams, supCodes, areas, groupSales, prdTypes, productNames };
             }, [data, selectedTeam]);
 
@@ -358,7 +354,6 @@ Sales Dasboard Executive Summary
                     const teamMatch = selectedTeam === 'All' || item.team === selectedTeam;
                     const areaMatch = selectedArea === 'All' || item.salesCode === selectedArea;
                     const supMatch = selectedSupCode === 'All' || item.sup === selectedSupCode;
-                    
                     const groupMatch = selectedGroupSales === 'All' || item.group === selectedGroupSales;
                     const prdTypeMatch = selectedPrdType === 'All' || item.prdType === selectedPrdType;
                     const productNameMatch = selectedProductName === 'All' || item.productName === selectedProductName;
@@ -370,10 +365,7 @@ Sales Dasboard Executive Summary
             // KPIs Calculation
             const kpis = useMemo(() => {
                 let totalSales = 0, totalTarget = 0;
-                filteredData.forEach(d => {
-                    totalSales += d.sales;
-                    totalTarget += d.target;
-                });
+                filteredData.forEach(d => { totalSales += d.sales; totalTarget += d.target; });
 
                 let uniqueSalesCodes = [...new Set(filteredData.map(d => d.salesCode))];
                 let outTarget = 0, outActive = 0;
@@ -385,23 +377,14 @@ Sales Dasboard Executive Summary
                 });
 
                 return { 
-                    totalSales, 
-                    totalTarget, 
-                    salesAch: calculateAch(totalSales, totalTarget),
-                    outTarget,
-                    outActive,
-                    outAch: calculateAch(outActive, outTarget)
+                    totalSales, totalTarget, salesAch: calculateAch(totalSales, totalTarget),
+                    outTarget, outActive, outAch: calculateAch(outActive, outTarget)
                 };
             }, [filteredData, outletData]);
 
             // Topics Analysis
             const topicsAnalysis = useMemo(() => {
-                const res = {
-                    pushOther: { sales: 0, target: 0 },
-                    existing: { sales: 0, target: 0 },
-                    newGroup: { sales: 0, target: 0 }
-                };
-
+                const res = { pushOther: { sales: 0, target: 0 }, existing: { sales: 0, target: 0 }, newGroup: { sales: 0, target: 0 } };
                 filteredData.forEach(d => {
                     const isPushOther = (d.prdType === 'Product Push' || d.prdType === 'Other Product');
                     const isExisting = (d.group === 'Existing Product' || d.group === 'Existing Products');
@@ -411,7 +394,6 @@ Sales Dasboard Executive Summary
                     if (isExisting) { res.existing.sales += d.sales; res.existing.target += d.target; }
                     if (isNew) { res.newGroup.sales += d.sales; res.newGroup.target += d.target; }
                 });
-
                 return res;
             }, [filteredData]);
 
@@ -420,9 +402,7 @@ Sales Dasboard Executive Summary
                 const grouped = {};
                 filteredData.forEach(d => {
                     let key = `${d.team}|${d.sup}|${d.salesCode}`;
-                    if (!grouped[key]) {
-                        grouped[key] = { team: d.team, sup: d.sup, area: d.salesCode, sales: 0, target: 0 };
-                    }
+                    if (!grouped[key]) grouped[key] = { team: d.team, sup: d.sup, area: d.salesCode, sales: 0, target: 0 };
                     grouped[key].sales += d.sales;
                     grouped[key].target += d.target;
                 });
@@ -430,30 +410,24 @@ Sales Dasboard Executive Summary
                 return Object.values(grouped).map(g => {
                     const out = outletData[g.area] || { target: 0, active: 0 };
                     return {
-                        ...g,
-                        salesAch: calculateAch(g.sales, g.target),
-                        outTarget: out.target,
-                        outActive: out.active,
-                        outAch: calculateAch(out.active, out.target)
+                        ...g, salesAch: calculateAch(g.sales, g.target),
+                        outTarget: out.target, outActive: out.active, outAch: calculateAch(out.active, out.target)
                     };
                 }).sort((a, b) => a.team.localeCompare(b.team) || a.area.localeCompare(b.area));
             }, [filteredData, outletData]);
 
-            // Area Comparison Chart Data
+            // Area Comparison Chart
             const areaChartData = useMemo(() => {
                 const grouped = {};
                 filteredData.forEach(d => {
                     let key = selectedTeam === 'All' ? d.team : d.salesCode;
                     if (!grouped[key]) grouped[key] = { name: key, Sales: 0, Target: 0 };
-                    grouped[key].Sales += d.sales;
-                    grouped[key].Target += d.target;
+                    grouped[key].Sales += d.sales; grouped[key].Target += d.target;
                 });
-                return Object.values(grouped).map(d => ({
-                    ...d, Ach: calculateAch(d.Sales, d.Target)
-                })).sort((a, b) => b.Sales - a.Sales);
+                return Object.values(grouped).map(d => ({ ...d, Ach: calculateAch(d.Sales, d.Target) })).sort((a, b) => b.Sales - a.Sales);
             }, [filteredData, selectedTeam]);
 
-            // Monthly Trend Chart Data
+            // Monthly Trend Chart
             const trendData = useMemo(() => {
                 const grouped = {};
                 MONTH_NAMES_ENG.forEach((m, i) => { grouped[i+1] = { name: m, Sales: 0, Target: 0 }; });
@@ -483,43 +457,40 @@ Sales Dasboard Executive Summary
             }, [filteredData, currentPage]);
             const totalPages = Math.ceil(filteredData.length / itemsPerPage) || 1;
 
-            // Reset Page on Filter Change
             React.useEffect(() => { setCurrentPage(1); }, [selectedTeam, selectedArea, selectedYear, selectedQuarter, selectedMonth, selectedSupCode, selectedGroupSales, selectedPrdType, selectedProductName]);
 
-            // --- Render Loading Screen ---
+            // --- หน้าจอดาวน์โหลดแอป ---
             if (isLoading) {
                 return (
-                    <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50">
-                        <div className="loader mb-4"></div>
-                        <h2 className="text-xl font-bold text-slate-800">กำลังดึงข้อมูลจากระบบ (API)...</h2>
-                        <p className="text-slate-500 mt-2 text-sm">Please wait while data is loading</p>
+                    <div className="flex flex-col items-center justify-center min-h-screen bg-slate-900 text-white">
+                        <div className="loader mb-6"></div>
+                        <h2 className="text-2xl font-extrabold mb-2">กำลังซิงค์ข้อมูล...</h2>
+                        <p className="text-slate-400 font-medium">{loadingProgress}% ดึงข้อมูลล่าสุดจากระบบ</p>
                     </div>
                 );
             }
 
-            // --- Render Empty State (Fallback for Manual Upload) ---
+            // --- หน้าจอ Fallback (ถ้าเปิด Offline หรือไม่มีไฟล์บน GitHub) ---
             if (data.length === 0) {
                 return (
-                    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-6 font-sans">
-                        <div className="bg-white p-10 rounded-[2rem] shadow-2xl text-center max-w-lg w-full border border-slate-100">
-                            <div className="bg-gradient-to-tr from-blue-600 to-indigo-500 w-20 h-20 rounded-[1.5rem] flex items-center justify-center mx-auto mb-6 shadow-lg shadow-blue-200 transform rotate-3">
-                                <Icons.Upload className="text-white" size={36} />
+                    <div className="flex flex-col items-center justify-center min-h-screen bg-slate-900 text-white p-6 font-sans">
+                        <div className="bg-slate-800 p-10 rounded-[2rem] shadow-2xl text-center max-w-lg w-full border border-slate-700">
+                            <div className="bg-gradient-to-tr from-blue-500 to-indigo-400 w-24 h-24 rounded-3xl flex items-center justify-center mx-auto mb-8 shadow-lg shadow-blue-500/50 transform rotate-3">
+                                <Icons.Upload className="text-white" size={40} />
                             </div>
-                            <h1 className="text-3xl font-extrabold text-slate-800 mb-3 tracking-tight">Executive Dashboard</h1>
-                            <p className="text-slate-500 mb-2 font-medium text-lg">OB2 & HOR Summary</p>
+                            <h1 className="text-3xl font-extrabold mb-3 tracking-tight">Executive App</h1>
+                            <p className="text-slate-400 mb-8 font-medium">รอการเชื่อมต่อข้อมูล...</p>
                             
                             {apiError && (
-                                <div className="bg-amber-50 text-amber-700 p-3 rounded-xl mb-4 text-sm font-semibold border border-amber-200 text-left">
-                                    <p>⚠️ ไม่พบไฟล์บน Server เพื่อโหลดอัตโนมัติ</p>
-                                    <p className="text-xs font-normal mt-1">สามารถอัปโหลดไฟล์ด้วยตนเองด้านล่าง เพื่อดูข้อมูลได้เลยครับ</p>
+                                <div className="bg-rose-500/10 text-rose-300 p-4 rounded-2xl mb-8 text-sm font-semibold border border-rose-500/30 text-left">
+                                    <p className="flex items-center gap-2"><Icons.Filter size={18}/> ไม่พบไฟล์ข้อมูลอัตโนมัติบน GitHub</p>
+                                    <p className="text-xs font-normal mt-2 opacity-80">คุณอาจจะยังไม่ได้อัปโหลดไฟล์ CSV ทั้ง 5 ไฟล์ไว้ใน GitHub Repository หรือชื่อไฟล์อาจจะไม่ตรงกัน กดนำเข้าเองเพื่อทดลองดูได้ครับ</p>
                                 </div>
                             )}
 
-                            <p className="text-slate-400 mb-8 text-sm px-4">กรุณาอัปโหลดไฟล์ Sales (V03), Target (V03) และ Executive Summary <br/><b>*สามารถคลุมดำเลือกหลายไฟล์พร้อมกันได้*</b></p>
-                            
-                            <label className="cursor-pointer bg-slate-900 hover:bg-blue-700 text-white font-bold py-4 px-8 rounded-2xl transition-all duration-300 flex items-center justify-center gap-3 shadow-xl hover:shadow-blue-500/30 transform hover:-translate-y-1">
+                            <label className="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 px-8 rounded-2xl transition-all duration-300 flex items-center justify-center gap-3 shadow-xl transform active:scale-95 w-full">
                                 <Icons.Upload size={22} />
-                                <span className="text-lg">อัปโหลดไฟล์ CSV (Manual)</span>
+                                <span className="text-lg">นำเข้าไฟล์ (Manual)</span>
                                 <input type="file" accept=".csv" multiple onChange={handleFileUpload} className="hidden" />
                             </label>
                         </div>
@@ -527,26 +498,24 @@ Sales Dasboard Executive Summary
                 );
             }
 
-            // Sub-Component: Topic Card
+            // --- Component ของ Topic Card ---
             const TopicCard = ({ title, sales, target, icon, bgClass }) => {
                 const ach = calculateAch(sales, target);
                 const isSuccess = parseFloat(ach) >= 100;
                 return (
-                    <div className="glass-card p-5 rounded-2xl relative overflow-hidden group h-full">
+                    <div className="glass-card p-5 rounded-3xl relative overflow-hidden flex flex-col justify-between h-full bg-white">
                         <div className="flex justify-between items-start mb-4">
                             <div>
-                                <h4 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">{title}</h4>
-                                <div className="flex items-baseline gap-2">
-                                    <span className="text-2xl font-extrabold text-slate-800">{formatTHB(sales)}</span>
-                                </div>
-                                <p className="text-xs font-semibold text-slate-400 mt-1">Target: {formatTHB(target)}</p>
+                                <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">{title}</h4>
+                                <div className="text-2xl font-black text-slate-800">{formatTHB(sales)}</div>
+                                <p className="text-xs font-bold text-slate-400 mt-1">Target: {formatTHB(target)}</p>
                             </div>
-                            <div className={`${bgClass} p-3 rounded-xl shadow-sm`}>{icon}</div>
+                            <div className={`${bgClass} p-3.5 rounded-2xl shadow-inner`}>{icon}</div>
                         </div>
                         
-                        <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
-                            <span className="text-sm font-bold text-slate-600">% Achievement</span>
-                            <span className={`px-3 py-1 rounded-lg text-sm font-extrabold ${isSuccess ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                        <div className="mt-2 pt-4 border-t border-slate-100 flex items-center justify-between">
+                            <span className="text-xs font-bold text-slate-500">Achievement</span>
+                            <span className={`px-3 py-1 rounded-xl text-xs font-black ${isSuccess ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
                                 {ach}%
                             </span>
                         </div>
@@ -559,26 +528,26 @@ Sales Dasboard Executive Summary
 
             return (
                 <div className="min-h-screen bg-slate-50 font-sans pb-12 flex flex-col">
-                    {/* Header */}
+                    {/* Header (App Bar) */}
                     <nav className="bg-slate-900 shadow-xl sticky top-0 z-40">
                         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
-                            <div className="flex justify-between h-20 items-center">
-                                <div className="flex items-center gap-4">
-                                    <div className="bg-gradient-to-br from-blue-500 to-indigo-600 p-2.5 rounded-xl shadow-inner">
-                                        <Icons.Award className="text-white w-7 h-7" />
+                            <div className="flex justify-between h-16 sm:h-20 items-center">
+                                <div className="flex items-center gap-3 sm:gap-4">
+                                    <div className="bg-gradient-to-br from-blue-500 to-indigo-600 p-2 sm:p-2.5 rounded-xl shadow-inner">
+                                        <Icons.Award className="text-white w-5 h-5 sm:w-7 sm:h-7" />
                                     </div>
                                     <div>
-                                        <h1 className="text-lg sm:text-2xl font-extrabold text-white tracking-wide">Sales Dashboard Executive Summary : OB2 & HOR</h1>
-                                        <p className="text-xs sm:text-sm text-blue-200 font-medium">Data Synced • {loadedFiles.length} Sources</p>
+                                        <h1 className="text-base sm:text-2xl font-extrabold text-white tracking-wide leading-tight">Sales Dashboard</h1>
+                                        <p className="text-[10px] sm:text-xs text-blue-200 font-medium">OB2 & HOR Summary</p>
                                     </div>
                                 </div>
-                                <div className="flex gap-3">
-                                    <button onClick={fetchAPIData} className="hidden md:flex text-sm font-bold text-white bg-transparent hover:bg-white/10 px-3 py-2.5 rounded-xl transition-all items-center gap-2">
-                                        <Icons.Refresh size={18} /> Refresh API
+                                <div className="flex gap-2">
+                                    <button onClick={fetchAPIData} className="text-white bg-white/10 hover:bg-white/20 p-2.5 rounded-xl transition-all flex items-center gap-2">
+                                        <Icons.Refresh size={20} />
+                                        <span className="hidden md:inline font-bold text-sm">อัปเดตข้อมูล</span>
                                     </button>
-                                    <label className="cursor-pointer text-sm font-bold text-slate-900 bg-white hover:bg-blue-50 px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 shadow-sm">
-                                        <Icons.Upload size={18} />
-                                        <span className="hidden md:inline">อัปโหลดเพิ่ม</span>
+                                    <label className="cursor-pointer text-slate-900 bg-white hover:bg-blue-50 p-2.5 rounded-xl transition-all flex items-center shadow-sm">
+                                        <Icons.Upload size={20} />
                                         <input type="file" accept=".csv" multiple onChange={handleFileUpload} className="hidden" />
                                     </label>
                                 </div>
@@ -587,82 +556,83 @@ Sales Dasboard Executive Summary
                     </nav>
 
                     {/* Main Layout Area */}
-                    <main className="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col lg:flex-row gap-8 items-start flex-1">
+                    <main className="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 flex flex-col xl:flex-row gap-6 sm:gap-8 items-start flex-1">
                         
-                        {/* Sidebar: Filters Section */}
-                        <aside className="w-full lg:w-72 xl:w-80 flex-shrink-0">
-                            <div className="glass-card p-6 rounded-3xl lg:sticky lg:top-28 max-h-none lg:max-h-[calc(100vh-8rem)] overflow-y-auto custom-scrollbar">
-                                <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-200">
+                        {/* Sidebar: Filters Section (ซ้ายมือ) */}
+                        <aside className="w-full xl:w-80 flex-shrink-0">
+                            <div className="glass-card p-5 sm:p-6 rounded-3xl xl:sticky xl:top-28">
+                                <div className="flex items-center gap-3 mb-5 pb-4 border-b border-slate-100">
                                     <div className="bg-blue-100 p-2.5 rounded-xl"><Icons.Filter size={20} className="text-blue-700"/></div>
                                     <span className="font-extrabold text-slate-800 uppercase tracking-wide text-lg">Filters</span>
                                 </div>
                                 
-                                <div className="flex flex-col gap-4">
-                                    {/* Time Filters */}
-                                    <div>
-                                        <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1.5 ml-1">Year (ปี)</label>
-                                        <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 block p-3 font-semibold shadow-sm transition">
+                                <div className="grid grid-cols-2 xl:grid-cols-1 gap-4">
+                                    <div className="col-span-2 sm:col-span-1 xl:col-span-1">
+                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Year (ปี)</label>
+                                        <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:ring-2 focus:ring-blue-500 block p-3 font-bold shadow-sm appearance-none">
                                             <option value="All">ทุกปี (All)</option>
                                             {filterOptions.years.map(y => <option key={y} value={y}>{y}</option>)}
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1.5 ml-1">Quarter (ไตรมาส)</label>
-                                        <select value={selectedQuarter} onChange={(e) => setSelectedQuarter(e.target.value)} className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 block p-3 font-semibold shadow-sm transition">
-                                            <option value="All">ทุกไตรมาส (All)</option>
+                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Quarter</label>
+                                        <select value={selectedQuarter} onChange={(e) => setSelectedQuarter(e.target.value)} className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:ring-2 focus:ring-blue-500 block p-3 font-bold shadow-sm appearance-none">
+                                            <option value="All">ทุกไตรมาส</option>
                                             {filterOptions.quarters.map(q => <option key={q} value={q}>{q}</option>)}
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1.5 ml-1">Month (เดือน)</label>
-                                        <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 block p-3 font-semibold shadow-sm transition">
-                                            <option value="All">ทุกเดือน (All)</option>
+                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Month</label>
+                                        <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:ring-2 focus:ring-blue-500 block p-3 font-bold shadow-sm appearance-none">
+                                            <option value="All">ทุกเดือน</option>
                                             {MONTH_NAMES_TH.map((m, index) => <option key={index} value={index+1}>{m}</option>)}
                                         </select>
                                     </div>
 
-                                    {/* Hierarchy Filters */}
+                                    <div className="col-span-2 xl:col-span-1 border-t border-slate-100 pt-3 mt-1"></div>
+
                                     <div>
-                                        <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1.5 ml-1 mt-2 border-t border-slate-100 pt-3">Team (ทีม)</label>
-                                        <select value={selectedTeam} onChange={(e) => setSelectedTeam(e.target.value)} className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 block p-3 font-semibold shadow-sm transition">
-                                            <option value="All">ทุกทีม (All)</option>
+                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Team</label>
+                                        <select value={selectedTeam} onChange={(e) => setSelectedTeam(e.target.value)} className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:ring-2 focus:ring-blue-500 block p-3 font-bold shadow-sm appearance-none">
+                                            <option value="All">ทุกทีม</option>
                                             {filterOptions.teams.map(t => <option key={t} value={t}>{t}</option>)}
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1.5 ml-1">Area (เขตการขาย)</label>
-                                        <select value={selectedArea} onChange={(e) => setSelectedArea(e.target.value)} className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 block p-3 font-semibold shadow-sm transition">
-                                            <option value="All">ทุกเขต (All)</option>
+                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Area</label>
+                                        <select value={selectedArea} onChange={(e) => setSelectedArea(e.target.value)} className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:ring-2 focus:ring-blue-500 block p-3 font-bold shadow-sm appearance-none">
+                                            <option value="All">ทุกเขต</option>
                                             {filterOptions.areas.map(a => <option key={a} value={a}>{a}</option>)}
                                         </select>
                                     </div>
-                                    <div>
-                                        <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1.5 ml-1">SUP Code</label>
-                                        <select value={selectedSupCode} onChange={(e) => setSelectedSupCode(e.target.value)} className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 block p-3 font-semibold shadow-sm transition">
-                                            <option value="All">ทุก SUP (All)</option>
+                                    <div className="col-span-2 sm:col-span-1 xl:col-span-1">
+                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5 ml-1">SUP Code</label>
+                                        <select value={selectedSupCode} onChange={(e) => setSelectedSupCode(e.target.value)} className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:ring-2 focus:ring-blue-500 block p-3 font-bold shadow-sm appearance-none">
+                                            <option value="All">ทุก SUP</option>
                                             {filterOptions.supCodes.map(s => <option key={s} value={s}>{s}</option>)}
                                         </select>
                                     </div>
 
-                                    {/* Product Filters */}
-                                    <div>
-                                        <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1.5 ml-1 mt-2 border-t border-slate-100 pt-3">Group Sales</label>
-                                        <select value={selectedGroupSales} onChange={(e) => setSelectedGroupSales(e.target.value)} className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 block p-3 font-semibold shadow-sm transition">
-                                            <option value="All">ทุก Group (All)</option>
+                                    <div className="col-span-2 xl:col-span-1 border-t border-slate-100 pt-3 mt-1"></div>
+
+                                    <div className="col-span-2 sm:col-span-1 xl:col-span-1">
+                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Group Sales</label>
+                                        <select value={selectedGroupSales} onChange={(e) => setSelectedGroupSales(e.target.value)} className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:ring-2 focus:ring-blue-500 block p-3 font-bold shadow-sm appearance-none">
+                                            <option value="All">ทุก Group</option>
                                             {filterOptions.groupSales.map(c => <option key={c} value={c}>{c}</option>)}
                                         </select>
                                     </div>
-                                    <div>
-                                        <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1.5 ml-1">PRD Type</label>
-                                        <select value={selectedPrdType} onChange={(e) => setSelectedPrdType(e.target.value)} className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 block p-3 font-semibold shadow-sm transition">
-                                            <option value="All">ทุก PRD Type (All)</option>
+                                    <div className="col-span-2 sm:col-span-1 xl:col-span-1">
+                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5 ml-1">PRD Type</label>
+                                        <select value={selectedPrdType} onChange={(e) => setSelectedPrdType(e.target.value)} className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:ring-2 focus:ring-blue-500 block p-3 font-bold shadow-sm appearance-none">
+                                            <option value="All">ทุก PRD Type</option>
                                             {filterOptions.prdTypes.map(c => <option key={c} value={c}>{c}</option>)}
                                         </select>
                                     </div>
-                                    <div>
-                                        <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1.5 ml-1">Product Name</label>
-                                        <select value={selectedProductName} onChange={(e) => setSelectedProductName(e.target.value)} className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 block p-3 font-semibold shadow-sm transition">
-                                            <option value="All">ทุกสินค้า (All)</option>
+                                    <div className="col-span-2 xl:col-span-1">
+                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Product Name</label>
+                                        <select value={selectedProductName} onChange={(e) => setSelectedProductName(e.target.value)} className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:ring-2 focus:ring-blue-500 block p-3 font-bold shadow-sm appearance-none">
+                                            <option value="All">ทุกสินค้า</option>
                                             {filterOptions.productNames.map(c => <option key={c} value={c}>{c}</option>)}
                                         </select>
                                     </div>
@@ -671,62 +641,62 @@ Sales Dasboard Executive Summary
                         </aside>
 
                         {/* Right Area: Content & Data */}
-                        <div className="flex-1 space-y-8 min-w-0 w-full">
+                        <div className="flex-1 space-y-6 sm:space-y-8 min-w-0 w-full">
                             
                             {/* Master KPIs */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 {/* Sales KPI */}
-                                <div className="glass-card p-6 rounded-3xl flex items-center justify-between relative overflow-hidden border-l-8 border-l-blue-500">
-                                    <div className="z-10">
-                                        <p className="text-slate-500 text-sm font-extrabold uppercase tracking-widest mb-1">Target vs Sales</p>
-                                        <div className="flex items-baseline gap-3 mt-2 flex-wrap">
-                                            <h3 className="text-4xl font-black text-slate-800">{formatTHB(kpis.totalSales)}</h3>
-                                            <span className="text-lg font-bold text-slate-400">/ {formatTHB(kpis.totalTarget)}</span>
+                                <div className="glass-card p-6 sm:p-8 rounded-[2rem] flex items-center justify-between relative overflow-hidden bg-gradient-to-br from-blue-600 to-indigo-700 text-white shadow-xl shadow-blue-500/20">
+                                    <div className="z-10 w-full">
+                                        <p className="text-blue-200 text-xs sm:text-sm font-extrabold uppercase tracking-widest mb-2">Target vs Sales</p>
+                                        <div className="flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-3 mb-4">
+                                            <h3 className="text-4xl sm:text-5xl font-black">{formatTHB(kpis.totalSales)}</h3>
+                                            <span className="text-lg font-bold text-blue-300">/ {formatTHB(kpis.totalTarget)}</span>
                                         </div>
-                                        <div className="mt-4 inline-flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100">
-                                            <span className="text-xs font-bold text-slate-500 uppercase">Achievement</span>
-                                            <span className={`text-lg font-black ${kpis.salesAch >= 100 ? 'text-emerald-600' : 'text-rose-600'}`}>{kpis.salesAch}%</span>
+                                        <div className="inline-flex items-center gap-3 bg-white/10 px-4 py-2 rounded-xl backdrop-blur-md border border-white/20">
+                                            <span className="text-xs font-bold uppercase text-blue-100">Achieved</span>
+                                            <span className={`text-xl font-black ${kpis.salesAch >= 100 ? 'text-emerald-300' : 'text-rose-300'}`}>{kpis.salesAch}%</span>
                                         </div>
                                     </div>
-                                    <Icons.Dollar size={80} className="text-blue-50 opacity-50 absolute -right-4 -bottom-4 transform -rotate-12" />
+                                    <Icons.Dollar size={120} className="text-white opacity-10 absolute -right-6 -bottom-6 transform -rotate-12" />
                                 </div>
 
                                 {/* Outlet KPI */}
-                                <div className="glass-card p-6 rounded-3xl flex items-center justify-between relative overflow-hidden border-l-8 border-l-amber-500">
-                                    <div className="z-10">
-                                        <p className="text-slate-500 text-sm font-extrabold uppercase tracking-widest mb-1">Outlet Target vs Outlet (Active)</p>
-                                        <div className="flex items-baseline gap-3 mt-2 flex-wrap">
-                                            <h3 className="text-4xl font-black text-slate-800">{formatNumber(kpis.outActive)}</h3>
-                                            <span className="text-lg font-bold text-slate-400">/ {formatNumber(kpis.outTarget)}</span>
+                                <div className="glass-card p-6 sm:p-8 rounded-[2rem] flex items-center justify-between relative overflow-hidden bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-xl shadow-amber-500/20">
+                                    <div className="z-10 w-full">
+                                        <p className="text-amber-200 text-xs sm:text-sm font-extrabold uppercase tracking-widest mb-2">Outlet Target vs Active</p>
+                                        <div className="flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-3 mb-4">
+                                            <h3 className="text-4xl sm:text-5xl font-black">{formatNumber(kpis.outActive)}</h3>
+                                            <span className="text-lg font-bold text-amber-200">/ {formatNumber(kpis.outTarget)}</span>
                                         </div>
-                                        <div className="mt-4 inline-flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100">
-                                            <span className="text-xs font-bold text-slate-500 uppercase">Achievement</span>
-                                            <span className={`text-lg font-black ${kpis.outAch >= 100 ? 'text-emerald-600' : 'text-amber-600'}`}>{kpis.outAch}%</span>
+                                        <div className="inline-flex items-center gap-3 bg-white/10 px-4 py-2 rounded-xl backdrop-blur-md border border-white/20">
+                                            <span className="text-xs font-bold uppercase text-amber-100">Achieved</span>
+                                            <span className={`text-xl font-black ${kpis.outAch >= 100 ? 'text-emerald-300' : 'text-rose-200'}`}>{kpis.outAch}%</span>
                                         </div>
                                     </div>
-                                    <Icons.Store size={80} className="text-amber-50 opacity-50 absolute -right-4 -bottom-4 transform rotate-12" />
+                                    <Icons.Store size={120} className="text-white opacity-10 absolute -right-6 -bottom-6 transform rotate-12" />
                                 </div>
                             </div>
 
                             {/* Executive Summary Table */}
-                            <div className="glass-card rounded-3xl overflow-hidden shadow-sm">
-                                <div className="p-6 border-b border-slate-100 flex items-center gap-3 bg-slate-50/80">
-                                    <div className="bg-indigo-100 p-2 rounded-lg"><Icons.Table size={20} className="text-indigo-600"/></div>
-                                    <h3 className="text-xl font-extrabold text-slate-800">Executive Summary By Team / Area</h3>
+                            <div className="glass-card rounded-[2rem] overflow-hidden shadow-sm bg-white">
+                                <div className="p-5 sm:p-6 border-b border-slate-100 flex items-center gap-3 bg-slate-50/50">
+                                    <div className="bg-indigo-100 p-2.5 rounded-xl"><Icons.Table size={20} className="text-indigo-600"/></div>
+                                    <h3 className="text-lg sm:text-xl font-extrabold text-slate-800">Executive Summary <span className="hidden sm:inline">By Team / Area</span></h3>
                                 </div>
-                                <div className="overflow-x-auto custom-scrollbar bg-white">
+                                <div className="overflow-x-auto custom-scrollbar">
                                     <table className="w-full text-sm text-left text-slate-600">
-                                        <thead className="text-xs text-slate-500 uppercase bg-slate-50 whitespace-nowrap">
+                                        <thead className="text-[10px] sm:text-xs text-slate-500 uppercase bg-slate-50 whitespace-nowrap">
                                             <tr>
-                                                <th className="px-6 py-4 font-extrabold tracking-wider border-r border-slate-100">Team</th>
-                                                <th className="px-6 py-4 font-extrabold tracking-wider border-r border-slate-100">SUP Code</th>
-                                                <th className="px-6 py-4 font-extrabold tracking-wider border-r border-slate-200">Area (Sales Code)</th>
-                                                <th className="px-6 py-4 font-extrabold tracking-wider text-right text-blue-600">Target</th>
-                                                <th className="px-6 py-4 font-extrabold tracking-wider text-right text-blue-600">Sales</th>
-                                                <th className="px-6 py-4 font-extrabold tracking-wider text-center border-r border-slate-200 text-blue-600">% Ach</th>
-                                                <th className="px-6 py-4 font-extrabold tracking-wider text-right text-amber-600">Outlet Target</th>
-                                                <th className="px-6 py-4 font-extrabold tracking-wider text-right text-amber-600">Outlet (Active)</th>
-                                                <th className="px-6 py-4 font-extrabold tracking-wider text-center text-amber-600">% Ach</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider border-r border-slate-100">Team</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider border-r border-slate-100">SUP Code</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider border-r border-slate-200">Area</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider text-right text-blue-600">Target</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider text-right text-blue-600">Sales</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider text-center border-r border-slate-200 text-blue-600">% Ach</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider text-right text-amber-600">Out. Target</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider text-right text-amber-600">Out. Active</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider text-center text-amber-600">% Ach</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
@@ -735,27 +705,27 @@ Sales Dasboard Executive Summary
                                                 const outSuccess = parseFloat(item.outAch) >= 100;
                                                 return (
                                                     <tr key={idx} className="hover:bg-slate-50 transition-colors whitespace-nowrap">
-                                                        <td className="px-6 py-4 font-black text-slate-700 border-r border-slate-100">{item.team}</td>
-                                                        <td className="px-6 py-4 font-medium text-slate-500 border-r border-slate-100">{item.sup}</td>
-                                                        <td className="px-6 py-4 font-bold text-slate-800 border-r border-slate-200">{item.area}</td>
-                                                        <td className="px-6 py-4 text-right font-medium text-slate-400">{formatNumber(item.target)}</td>
-                                                        <td className="px-6 py-4 text-right font-black text-slate-800">{formatNumber(item.sales)}</td>
-                                                        <td className="px-6 py-4 text-center border-r border-slate-200">
-                                                            <span className={`px-2 py-1 rounded-lg text-xs font-black ${salesSuccess ? 'text-emerald-600 bg-emerald-50' : 'text-rose-600 bg-rose-50'}`}>
+                                                        <td className="px-4 sm:px-6 py-4 font-black text-slate-700 border-r border-slate-100">{item.team}</td>
+                                                        <td className="px-4 sm:px-6 py-4 font-medium text-slate-500 border-r border-slate-100">{item.sup}</td>
+                                                        <td className="px-4 sm:px-6 py-4 font-bold text-slate-800 border-r border-slate-200">{item.area}</td>
+                                                        <td className="px-4 sm:px-6 py-4 text-right font-medium text-slate-400">{formatNumber(item.target)}</td>
+                                                        <td className="px-4 sm:px-6 py-4 text-right font-black text-slate-800">{formatNumber(item.sales)}</td>
+                                                        <td className="px-4 sm:px-6 py-4 text-center border-r border-slate-200">
+                                                            <span className={`px-2.5 py-1 rounded-lg text-xs font-black ${salesSuccess ? 'text-emerald-600 bg-emerald-100' : 'text-rose-600 bg-rose-100'}`}>
                                                                 {item.salesAch}%
                                                             </span>
                                                         </td>
-                                                        <td className="px-6 py-4 text-right font-medium text-slate-400">{formatNumber(item.outTarget)}</td>
-                                                        <td className="px-6 py-4 text-right font-black text-slate-800">{formatNumber(item.outActive)}</td>
-                                                        <td className="px-6 py-4 text-center">
-                                                            <span className={`px-2 py-1 rounded-lg text-xs font-black ${outSuccess ? 'text-emerald-600 bg-emerald-50' : 'text-amber-600 bg-amber-50'}`}>
+                                                        <td className="px-4 sm:px-6 py-4 text-right font-medium text-slate-400">{formatNumber(item.outTarget)}</td>
+                                                        <td className="px-4 sm:px-6 py-4 text-right font-black text-slate-800">{formatNumber(item.outActive)}</td>
+                                                        <td className="px-4 sm:px-6 py-4 text-center">
+                                                            <span className={`px-2.5 py-1 rounded-lg text-xs font-black ${outSuccess ? 'text-emerald-600 bg-emerald-100' : 'text-amber-600 bg-amber-100'}`}>
                                                                 {item.outAch}%
                                                             </span>
                                                         </td>
                                                     </tr>
                                                 );
                                             }) : (
-                                                <tr><td colSpan="9" className="px-6 py-8 text-center text-slate-400 font-bold">ไม่พบข้อมูล</td></tr>
+                                                <tr><td colSpan="9" className="px-6 py-10 text-center text-slate-400 font-bold">ไม่พบข้อมูล</td></tr>
                                             )}
                                         </tbody>
                                     </table>
@@ -764,11 +734,11 @@ Sales Dasboard Executive Summary
 
                             {/* Topics Section */}
                             <div>
-                                <h3 className="text-xl font-extrabold text-slate-800 mb-4 flex items-center gap-2">
+                                <h3 className="text-xl font-extrabold text-slate-800 mb-4 flex items-center gap-2 pl-2">
                                     <Icons.Package size={24} className="text-indigo-500" />
                                     Sales by Product Topics
                                 </h3>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
                                     <TopicCard 
                                         title="Product Push + Other Product" 
                                         sales={topicsAnalysis.pushOther.sales} 
@@ -796,9 +766,9 @@ Sales Dasboard Executive Summary
                             {/* Charts Section */}
                             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                                 {/* Trend Chart */}
-                                <div className="glass-card p-6 rounded-3xl">
+                                <div className="glass-card p-4 sm:p-6 rounded-[2rem] bg-white">
                                     <h3 className="text-lg font-extrabold text-slate-800 mb-6 flex items-center gap-2"><Icons.TrendingUp size={20} className="text-blue-500"/> Monthly Sales Trend</h3>
-                                    <div className="h-80 w-full">
+                                    <div className="h-64 sm:h-80 w-full">
                                         <ResponsiveContainer width="100%" height="100%">
                                             <ComposedChart data={trendData} margin={{ top: 10, right: 10, left: 10, bottom: 5 }}>
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
@@ -814,9 +784,9 @@ Sales Dasboard Executive Summary
                                 </div>
 
                                 {/* Area Comparison Chart */}
-                                <div className="glass-card p-6 rounded-3xl">
+                                <div className="glass-card p-4 sm:p-6 rounded-[2rem] bg-white">
                                     <h3 className="text-lg font-extrabold text-slate-800 mb-6 flex items-center gap-2"><Icons.Target size={20} className="text-emerald-500"/> Performance by {selectedTeam === 'All' ? 'Team' : 'Area'}</h3>
-                                    <div className="h-80 w-full">
+                                    <div className="h-64 sm:h-80 w-full">
                                         <ResponsiveContainer width="100%" height="100%">
                                             <BarChart data={areaChartData} margin={{ top: 10, right: 10, left: 10, bottom: 5 }}>
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
@@ -832,30 +802,30 @@ Sales Dasboard Executive Summary
                                 </div>
                             </div>
 
-                            {/* Detailed Table */}
-                            <div className="glass-card rounded-3xl overflow-hidden shadow-sm">
-                                <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white/50 gap-4">
-                                    <h3 className="text-xl font-extrabold text-slate-800 flex items-center gap-3">
+                            {/* Detailed Table (Product Level) */}
+                            <div className="glass-card rounded-[2rem] overflow-hidden shadow-sm bg-white">
+                                <div className="p-5 sm:p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center bg-slate-50/50 gap-4">
+                                    <h3 className="text-lg sm:text-xl font-extrabold text-slate-800 flex items-center gap-3">
                                         <div className="bg-slate-100 p-2 rounded-lg"><Icons.Table size={20} className="text-slate-600"/></div>
-                                        ตารางข้อมูลเจาะลึก (Product Level)
+                                        ตารางข้อมูลเจาะลึก (Product)
                                     </h3>
-                                    <span className="text-sm font-bold text-slate-500 bg-white px-4 py-1.5 rounded-full shadow-sm border border-slate-100">
-                                        แสดง {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, filteredData.length)} จาก {filteredData.length} รายการ
+                                    <span className="text-xs font-bold text-slate-500 bg-white px-4 py-2 rounded-full shadow-sm border border-slate-100">
+                                        แสดง {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, filteredData.length)} จาก {filteredData.length}
                                     </span>
                                 </div>
                                 
-                                <div className="overflow-x-auto custom-scrollbar bg-white">
+                                <div className="overflow-x-auto custom-scrollbar">
                                     <table className="w-full text-sm text-left text-slate-600">
-                                        <thead className="text-xs text-slate-400 uppercase bg-slate-50/50 whitespace-nowrap">
+                                        <thead className="text-[10px] sm:text-xs text-slate-400 uppercase bg-slate-50 whitespace-nowrap">
                                             <tr>
-                                                <th className="px-6 py-4 font-extrabold tracking-wider">Team</th>
-                                                <th className="px-6 py-4 font-extrabold tracking-wider">Area</th>
-                                                <th className="px-6 py-4 font-extrabold tracking-wider">Group Sales</th>
-                                                <th className="px-6 py-4 font-extrabold tracking-wider">PRD Type</th>
-                                                <th className="px-6 py-4 font-extrabold tracking-wider">Product Name</th>
-                                                <th className="px-6 py-4 font-extrabold tracking-wider text-right">Target</th>
-                                                <th className="px-6 py-4 font-extrabold tracking-wider text-right">Sales</th>
-                                                <th className="px-6 py-4 font-extrabold tracking-wider text-center">% Ach</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider">Team</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider">Area</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider">Group Sales</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider">PRD Type</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider min-w-[150px]">Product Name</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider text-right">Target</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider text-right">Sales</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider text-center">% Ach</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
@@ -865,15 +835,15 @@ Sales Dasboard Executive Summary
                                                     const isSuccess = parseFloat(achVal) >= 100;
                                                     return (
                                                         <tr key={index} className="hover:bg-blue-50/50 transition-colors whitespace-nowrap">
-                                                            <td className="px-6 py-4"><span className="bg-slate-100 text-slate-700 text-xs font-black px-3 py-1 rounded-lg">{item.team}</span></td>
-                                                            <td className="px-6 py-4 font-bold text-slate-800">{item.salesCode}</td>
-                                                            <td className="px-6 py-4 font-medium text-slate-500">{item.group}</td>
-                                                            <td className="px-6 py-4 font-medium text-slate-500">{item.prdType}</td>
-                                                            <td className="px-6 py-4 font-semibold text-slate-700">{item.productName}</td>
-                                                            <td className="px-6 py-4 text-right text-slate-400 font-medium">{formatNumber(item.target)}</td>
-                                                            <td className="px-6 py-4 text-right font-black text-slate-800">{formatTHB(item.sales)}</td>
-                                                            <td className="px-6 py-4 text-center">
-                                                                <span className={`px-3 py-1.5 rounded-xl text-xs font-black shadow-sm ${isSuccess ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-rose-100 text-rose-700 border border-rose-200'}`}>
+                                                            <td className="px-4 sm:px-6 py-4"><span className="bg-slate-100 text-slate-700 text-[10px] sm:text-xs font-black px-3 py-1.5 rounded-lg">{item.team}</span></td>
+                                                            <td className="px-4 sm:px-6 py-4 font-bold text-slate-800">{item.salesCode}</td>
+                                                            <td className="px-4 sm:px-6 py-4 font-medium text-slate-500">{item.group}</td>
+                                                            <td className="px-4 sm:px-6 py-4 font-medium text-slate-500">{item.prdType}</td>
+                                                            <td className="px-4 sm:px-6 py-4 font-semibold text-slate-700 truncate max-w-[200px]">{item.productName}</td>
+                                                            <td className="px-4 sm:px-6 py-4 text-right text-slate-400 font-medium">{formatNumber(item.target)}</td>
+                                                            <td className="px-4 sm:px-6 py-4 text-right font-black text-slate-800">{formatTHB(item.sales)}</td>
+                                                            <td className="px-4 sm:px-6 py-4 text-center">
+                                                                <span className={`px-2.5 py-1.5 rounded-xl text-[10px] sm:text-xs font-black shadow-sm ${isSuccess ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-rose-100 text-rose-700 border border-rose-200'}`}>
                                                                     {achVal}%
                                                                 </span>
                                                             </td>
@@ -889,31 +859,31 @@ Sales Dasboard Executive Summary
 
                                 {/* Page Filter / Pagination */}
                                 {filteredData.length > 0 && (
-                                    <div className="flex flex-col sm:flex-row items-center justify-between p-5 bg-white border-t border-slate-100 gap-4">
+                                    <div className="flex flex-col sm:flex-row items-center justify-between p-4 sm:p-5 bg-slate-50 border-t border-slate-100 gap-4">
                                         <button 
                                             onClick={() => setCurrentPage(p => Math.max(p - 1, 1))} 
                                             disabled={currentPage === 1} 
-                                            className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:text-blue-600 disabled:opacity-40 shadow-sm transition-all"
+                                            className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3 sm:py-2.5 text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:text-blue-600 disabled:opacity-40 shadow-sm transition-all"
                                         >
                                             <Icons.ChevronLeft size={18} /> ย้อนกลับ
                                         </button>
                                         
-                                        <div className="flex items-center gap-3 bg-slate-50 px-4 py-2 rounded-xl border border-slate-200">
-                                            <span className="text-sm font-bold text-slate-500 uppercase tracking-wide">เลือกหน้า</span>
+                                        <div className="flex items-center justify-center gap-3 bg-white px-4 py-2 rounded-xl border border-slate-200 w-full sm:w-auto shadow-sm">
+                                            <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">หน้า</span>
                                             <select 
                                                 value={currentPage} 
                                                 onChange={(e) => setCurrentPage(Number(e.target.value))} 
-                                                className="bg-white border border-slate-300 text-blue-700 text-base rounded-lg font-black block p-1.5 shadow-sm focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer"
+                                                className="bg-slate-50 border border-slate-200 text-blue-700 text-base rounded-lg font-black block p-1.5 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer"
                                             >
                                                 {Array.from({length: totalPages}, (_, i) => i + 1).map(page => (<option key={page} value={page}>{page}</option>))}
                                             </select>
-                                            <span className="text-sm font-bold text-slate-500 uppercase tracking-wide">จาก {totalPages}</span>
+                                            <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">จาก {totalPages}</span>
                                         </div>
 
                                         <button 
                                             onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))} 
                                             disabled={currentPage === totalPages} 
-                                            className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:text-blue-600 disabled:opacity-40 shadow-sm transition-all"
+                                            className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3 sm:py-2.5 text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:text-blue-600 disabled:opacity-40 shadow-sm transition-all"
                                         >
                                             ถัดไป <Icons.ChevronRight size={18} />
                                         </button>
