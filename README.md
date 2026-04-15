@@ -108,7 +108,8 @@
             Table: (props) => <Icon {...props} path={<><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><line x1="3" x2="21" y1="9" y2="9"/><line x1="3" x2="21" y1="15" y2="15"/><line x1="12" x2="12" y1="3" y2="21"/></>} />,
             ChevronLeft: (props) => <Icon {...props} path={<><polyline points="15 18 9 12 15 6"/></>} />,
             ChevronRight: (props) => <Icon {...props} path={<><polyline points="9 18 15 12 9 6"/></>} />,
-            Refresh: (props) => <Icon {...props} path={<><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-8.38l5.67-5.67"/></>} />
+            Refresh: (props) => <Icon {...props} path={<><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-8.38l5.67-5.67"/></>} />,
+            Users: (props) => <Icon {...props} path={<><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></>} />
         };
 
         // --- Utility Functions ---
@@ -382,23 +383,59 @@
                 };
             }, [filteredData, outletData]);
 
-            // Topics Analysis
-            const topicsAnalysis = useMemo(() => {
-                const res = { pushOther: { sales: 0, target: 0 }, existing: { sales: 0, target: 0 }, newGroup: { sales: 0, target: 0 } };
+            // Executive Summary By Team (ตารางแรกตาม PDF)
+            const execSummaryTeamData = useMemo(() => {
+                const summary = {};
                 filteredData.forEach(d => {
-                    const isPushOther = (d.prdType === 'Product Push' || d.prdType === 'Other Product');
-                    const isExisting = (d.group === 'Existing Product' || d.group === 'Existing Products');
-                    const isNew = (d.group === 'New Product' || d.prdType === 'New Product');
-
-                    if (isPushOther) { res.pushOther.sales += d.sales; res.pushOther.target += d.target; }
-                    if (isExisting) { res.existing.sales += d.sales; res.existing.target += d.target; }
-                    if (isNew) { res.newGroup.sales += d.sales; res.newGroup.target += d.target; }
+                    if (!summary[d.team]) {
+                        summary[d.team] = { team: d.team, sups: new Set(), target: 0, sales: 0, salesCodes: new Set() };
+                    }
+                    if (d.sup) summary[d.team].sups.add(d.sup);
+                    if (d.salesCode) summary[d.team].salesCodes.add(d.salesCode);
+                    summary[d.team].target += d.target;
+                    summary[d.team].sales += d.sales;
                 });
-                return res;
-            }, [filteredData]);
 
-            // Executive Summary Table Data
-            const execSummaryData = useMemo(() => {
+                let grandTarget = 0, grandSales = 0, grandOutTarget = 0, grandOutActive = 0;
+
+                const result = Object.values(summary).map(t => {
+                    let outTarget = 0, outActive = 0;
+                    t.salesCodes.forEach(code => {
+                        if (outletData[code]) {
+                            outTarget += outletData[code].target;
+                            outActive += outletData[code].active;
+                        }
+                    });
+
+                    grandTarget += t.target;
+                    grandSales += t.sales;
+                    grandOutTarget += outTarget;
+                    grandOutActive += outActive;
+
+                    const sortedSups = Array.from(t.sups).sort();
+                    const supStr = sortedSups.length > 2 ? `${sortedSups[0]}-${sortedSups[sortedSups.length-1]}` : sortedSups.join(', ');
+
+                    return {
+                        isGrandTotal: false,
+                        team: t.team, supStr: supStr,
+                        target: t.target, sales: t.sales, salesAch: calculateAch(t.sales, t.target),
+                        outTarget: outTarget, outActive: outActive, outAch: calculateAch(outActive, outTarget)
+                    };
+                }).sort((a, b) => a.team.localeCompare(b.team));
+
+                if (result.length > 0) {
+                    result.push({
+                        isGrandTotal: true,
+                        team: 'Grand Total', supStr: '',
+                        target: grandTarget, sales: grandSales, salesAch: calculateAch(grandSales, grandTarget),
+                        outTarget: grandOutTarget, outActive: grandOutActive, outAch: calculateAch(grandOutActive, grandOutTarget)
+                    });
+                }
+                return result;
+            }, [filteredData, outletData]);
+
+            // Executive Summary By Area (ตารางระดับพื้นที่)
+            const execSummaryAreaData = useMemo(() => {
                 const grouped = {};
                 filteredData.forEach(d => {
                     let key = `${d.team}|${d.sup}|${d.salesCode}`;
@@ -415,6 +452,21 @@
                     };
                 }).sort((a, b) => a.team.localeCompare(b.team) || a.area.localeCompare(b.area));
             }, [filteredData, outletData]);
+
+            // Topics Analysis
+            const topicsAnalysis = useMemo(() => {
+                const res = { pushOther: { sales: 0, target: 0 }, existing: { sales: 0, target: 0 }, newGroup: { sales: 0, target: 0 } };
+                filteredData.forEach(d => {
+                    const isPushOther = (d.prdType === 'Product Push' || d.prdType === 'Other Product');
+                    const isExisting = (d.group === 'Existing Product' || d.group === 'Existing Products');
+                    const isNew = (d.group === 'New Product' || d.prdType === 'New Product');
+
+                    if (isPushOther) { res.pushOther.sales += d.sales; res.pushOther.target += d.target; }
+                    if (isExisting) { res.existing.sales += d.sales; res.existing.target += d.target; }
+                    if (isNew) { res.newGroup.sales += d.sales; res.newGroup.target += d.target; }
+                });
+                return res;
+            }, [filteredData]);
 
             // Area Comparison Chart
             const areaChartData = useMemo(() => {
@@ -470,7 +522,7 @@
                 );
             }
 
-            // --- หน้าจอ Fallback (ถ้าเปิด Offline หรือไม่มีไฟล์บน GitHub) ---
+            // --- หน้าจอ Fallback ---
             if (data.length === 0) {
                 return (
                     <div className="flex flex-col items-center justify-center min-h-screen bg-slate-900 text-white p-6 font-sans">
@@ -484,7 +536,7 @@
                             {apiError && (
                                 <div className="bg-rose-500/10 text-rose-300 p-4 rounded-2xl mb-8 text-sm font-semibold border border-rose-500/30 text-left">
                                     <p className="flex items-center gap-2"><Icons.Filter size={18}/> ไม่พบไฟล์ข้อมูลอัตโนมัติบน GitHub</p>
-                                    <p className="text-xs font-normal mt-2 opacity-80">คุณอาจจะยังไม่ได้อัปโหลดไฟล์ CSV ทั้ง 5 ไฟล์ไว้ใน GitHub Repository หรือชื่อไฟล์อาจจะไม่ตรงกัน กดนำเข้าเองเพื่อทดลองดูได้ครับ</p>
+                                    <p className="text-xs font-normal mt-2 opacity-80">กรุณาตรวจสอบว่ามีไฟล์ CSV วางอยู่ใน GitHub Repository หรือกดนำเข้าเองเพื่อทดลองดูได้ครับ</p>
                                 </div>
                             )}
 
@@ -558,7 +610,7 @@
                     {/* Main Layout Area */}
                     <main className="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 flex flex-col xl:flex-row gap-6 sm:gap-8 items-start flex-1">
                         
-                        {/* Sidebar: Filters Section (ซ้ายมือ) */}
+                        {/* Sidebar: Filters Section */}
                         <aside className="w-full xl:w-80 flex-shrink-0">
                             <div className="glass-card p-5 sm:p-6 rounded-3xl xl:sticky xl:top-28">
                                 <div className="flex items-center gap-3 mb-5 pb-4 border-b border-slate-100">
@@ -678,19 +730,18 @@
                                 </div>
                             </div>
 
-                            {/* Executive Summary Table */}
+                            {/* Executive Summary By Team (ตารางระดับภาพรวมทีม - NEW) */}
                             <div className="glass-card rounded-[2rem] overflow-hidden shadow-sm bg-white">
                                 <div className="p-5 sm:p-6 border-b border-slate-100 flex items-center gap-3 bg-slate-50/50">
-                                    <div className="bg-indigo-100 p-2.5 rounded-xl"><Icons.Table size={20} className="text-indigo-600"/></div>
-                                    <h3 className="text-lg sm:text-xl font-extrabold text-slate-800">Executive Summary <span className="hidden sm:inline">By Team / Area</span></h3>
+                                    <div className="bg-indigo-100 p-2.5 rounded-xl"><Icons.Users size={20} className="text-indigo-600"/></div>
+                                    <h3 className="text-lg sm:text-xl font-extrabold text-slate-800">Executive Summary <span className="hidden sm:inline">By Team</span></h3>
                                 </div>
                                 <div className="overflow-x-auto custom-scrollbar">
                                     <table className="w-full text-sm text-left text-slate-600">
                                         <thead className="text-[10px] sm:text-xs text-slate-500 uppercase bg-slate-50 whitespace-nowrap">
                                             <tr>
                                                 <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider border-r border-slate-100">Team</th>
-                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider border-r border-slate-100">SUP Code</th>
-                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider border-r border-slate-200">Area</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider border-r border-slate-200">SUP Code</th>
                                                 <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider text-right text-blue-600">Target</th>
                                                 <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider text-right text-blue-600">Sales</th>
                                                 <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider text-center border-r border-slate-200 text-blue-600">% Ach</th>
@@ -700,7 +751,61 @@
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
-                                            {execSummaryData.length > 0 ? execSummaryData.map((item, idx) => {
+                                            {execSummaryTeamData.length > 0 ? execSummaryTeamData.map((item, idx) => {
+                                                const salesSuccess = parseFloat(item.salesAch) >= 100;
+                                                const outSuccess = parseFloat(item.outAch) >= 100;
+                                                const isGrandTotal = item.isGrandTotal;
+                                                return (
+                                                    <tr key={idx} className={`transition-colors whitespace-nowrap ${isGrandTotal ? 'bg-blue-50/60 font-bold border-t-2 border-blue-200' : 'hover:bg-slate-50'}`}>
+                                                        <td className={`px-4 sm:px-6 py-4 ${isGrandTotal ? 'text-blue-800 font-black uppercase' : 'font-black text-slate-700'} border-r border-slate-100`}>{item.team}</td>
+                                                        <td className="px-4 sm:px-6 py-4 font-medium text-slate-500 border-r border-slate-200">{item.supStr}</td>
+                                                        <td className={`px-4 sm:px-6 py-4 text-right font-medium ${isGrandTotal ? 'text-blue-700' : 'text-slate-400'}`}>{formatNumber(item.target)}</td>
+                                                        <td className={`px-4 sm:px-6 py-4 text-right font-black ${isGrandTotal ? 'text-blue-800' : 'text-slate-800'}`}>{formatNumber(item.sales)}</td>
+                                                        <td className="px-4 sm:px-6 py-4 text-center border-r border-slate-200">
+                                                            <span className={`px-2.5 py-1 rounded-lg text-xs font-black ${salesSuccess ? 'text-emerald-600 bg-emerald-100' : 'text-rose-600 bg-rose-100'}`}>
+                                                                {item.salesAch}%
+                                                            </span>
+                                                        </td>
+                                                        <td className={`px-4 sm:px-6 py-4 text-right font-medium ${isGrandTotal ? 'text-amber-700' : 'text-slate-400'}`}>{formatNumber(item.outTarget)}</td>
+                                                        <td className={`px-4 sm:px-6 py-4 text-right font-black ${isGrandTotal ? 'text-amber-800' : 'text-slate-800'}`}>{formatNumber(item.outActive)}</td>
+                                                        <td className="px-4 sm:px-6 py-4 text-center">
+                                                            <span className={`px-2.5 py-1 rounded-lg text-xs font-black ${outSuccess ? 'text-emerald-600 bg-emerald-100' : 'text-amber-600 bg-amber-100'}`}>
+                                                                {item.outAch}%
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            }) : (
+                                                <tr><td colSpan="8" className="px-6 py-8 text-center text-slate-400 font-bold">ไม่พบข้อมูล</td></tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            {/* Executive Summary By Area */}
+                            <div className="glass-card rounded-[2rem] overflow-hidden shadow-sm bg-white">
+                                <div className="p-5 sm:p-6 border-b border-slate-100 flex items-center gap-3 bg-slate-50/50">
+                                    <div className="bg-indigo-100 p-2.5 rounded-xl"><Icons.Table size={20} className="text-indigo-600"/></div>
+                                    <h3 className="text-lg sm:text-xl font-extrabold text-slate-800">Executive Summary <span className="hidden sm:inline">By Area</span></h3>
+                                </div>
+                                <div className="overflow-x-auto custom-scrollbar">
+                                    <table className="w-full text-sm text-left text-slate-600">
+                                        <thead className="text-[10px] sm:text-xs text-slate-500 uppercase bg-slate-50 whitespace-nowrap">
+                                            <tr>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider border-r border-slate-100">Team</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider border-r border-slate-100">SUP Code</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider border-r border-slate-200">Area (Sales Code)</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider text-right text-blue-600">Target</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider text-right text-blue-600">Sales</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider text-center border-r border-slate-200 text-blue-600">% Ach</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider text-right text-amber-600">Out. Target</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider text-right text-amber-600">Out. Active</th>
+                                                <th className="px-4 sm:px-6 py-4 font-extrabold tracking-wider text-center text-amber-600">% Ach</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {execSummaryAreaData.length > 0 ? execSummaryAreaData.map((item, idx) => {
                                                 const salesSuccess = parseFloat(item.salesAch) >= 100;
                                                 const outSuccess = parseFloat(item.outAch) >= 100;
                                                 return (
